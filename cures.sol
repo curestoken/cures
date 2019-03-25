@@ -1,4 +1,26 @@
-pragma solidity ^0.4.24;
+pragma solidity >= 0.4.24 < 0.6.0;
+
+/**
+ * @title Owned
+ * @dev Contract that sets an owner, who can execute predefined functions, only accessible by him
+ */
+contract Owned {
+	address public owner;
+
+	constructor() public {
+		owner = msg.sender;
+	}
+
+	modifier onlyOwner {
+		require(msg.sender == owner);
+		_;
+	}
+
+	function transferOwnership(address newOwner) public onlyOwner {
+		require(newOwner != address(0x0));
+		owner = newOwner;
+	}
+}
 
 /**
  * @title SafeMath
@@ -20,17 +42,17 @@ contract SafeMath {
 	}
 }
 
-contract CURESToken is SafeMath {
+contract CURESToken is Owned, SafeMath {
 	// Public variables of the token
 	string public name = "CURESToken";									// Token name
 	string public symbol = "CRS";										// Token symbol
 	uint8 public decimals = 18;											// Token amount of decimals
 	uint256 public totalSupply = 500000000 * 10 ** uint256(decimals);	// Token supply - 500 Million
-	address public CURES = this;										// Token address
 
 	// Creates array with balances
 	mapping (address => uint256) public balances;
 	mapping (address => mapping (address => uint256)) public allowances;
+	mapping (address => uint256) public frozenAccounts;
 
 	/**
 	 * Constructor function
@@ -68,10 +90,13 @@ contract CURESToken is SafeMath {
 	 */	
 	function transfer(address _to, uint256 _value) public returns (bool success) {
 		// Prevent transfer to 0x0 (empty) address, use burn() instead
-		require(_to != 0x0);
+		require(_to != address(0x0));
 
 		// Prevent empty transactions
 		require(_value > 0);
+
+		// Check if sender account is frozen
+		require(frozenAccounts[msg.sender] < now);
 
 		// Check if sender has enough
 		require(balances[msg.sender] >= _value);
@@ -96,10 +121,13 @@ contract CURESToken is SafeMath {
 	 */	
 	function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {
 		// Prevent transfer to 0x0 (empty) address
-		require(_to != 0x0);
+		require(_to != address(0x0));
 
 		// Prevent empty transactions
 		require(_value > 0);
+
+		// Check if token owner account is frozen
+		require(frozenAccounts[_from] < now);
 
 		// Check if sender is allowed to spend the amount
 		require(allowances[_from][msg.sender] >= _value);
@@ -160,8 +188,25 @@ contract CURESToken is SafeMath {
 		return true;
 	}
 
+	/**
+	 * @dev Freeze one or more account until specific date
+	 * @param _addresses array with wallet addresses we want to freeze
+	 * @param _until is the time until when the account is frozen
+	 */
+	function FreezeAccounts(address[] memory _addresses, uint256 _until) public onlyOwner returns (bool success) {
+		for (uint i = 0; i < _addresses.length; i++) {
+			frozenAccounts[_addresses[i]] = _until;
+
+			// Generate the public freeze event
+			emit Freeze(_addresses[i], _until);
+		}
+
+		return true;
+	}
+
 	// Public events on the blockchain to notify clients
 	event Transfer(address indexed _owner, address indexed _to, uint256 _value);
 	event Approval(address indexed _owner, address indexed _spender, uint256 _value);
 	event Burn(address indexed _owner, uint256 _value);
+	event Freeze(address indexed _owner, uint256 _until);
 }
